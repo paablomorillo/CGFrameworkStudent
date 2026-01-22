@@ -9,6 +9,8 @@
 #include <stdio.h>
 #include <iostream>
 #include "framework.h"
+#include <vector>
+#include <climits>
 
 //remove unsafe warnings
 #ifndef _CRT_SECURE_NO_WARNINGS
@@ -31,11 +33,29 @@ class Image
 		unsigned char* data; // Bytes with the pixel information
 	} TGAInfo;
 
+	// LAB1: AET cell (min/max X per scanline)
+	typedef struct Cell
+	{
+		int minx = INT_MAX;
+		int maxx = INT_MIN;
+	} Cell;
+
 public:
+
 	unsigned int width;
 	unsigned int height;
-	unsigned int bytes_per_pixel = 3; // Bits per pixel
 
+	// Channels sent to OpenGL in Render() (RGB=3, RGBA=4)
+	unsigned int bytes_per_pixel = 3;
+
+	// Safe pixel write (avoids out-of-bounds) 
+	inline void SetPixelSafeInt(int x, int y, const Color& c)
+	{
+		if (x < 0 || y < 0 || x >= (int)width || y >= (int)height) return;
+		pixels[y * width + x] = c;
+	}
+
+	// Linear pixel buffer: pixels[y*width + x]
 	Color* pixels;
 
 	// Constructors
@@ -50,25 +70,26 @@ public:
 	void Render();
 
 	// Get the pixel at position x,y
-	Color GetPixel(unsigned int x, unsigned int y) const { return pixels[ y * width + x ]; }
-	Color& GetPixelRef(unsigned int x, unsigned int y)	{ return pixels[ y * width + x ]; }
-	Color GetPixelSafe(unsigned int x, unsigned int y) const {	
-		x = clamp((unsigned int)x, 0, width-1); 
-		y = clamp((unsigned int)y, 0, height-1); 
-		return pixels[ y * width + x ]; 
+	Color GetPixel(unsigned int x, unsigned int y) const { return pixels[y * width + x]; }
+	Color& GetPixelRef(unsigned int x, unsigned int y) { return pixels[y * width + x]; }
+
+	Color GetPixelSafe(unsigned int x, unsigned int y) const {
+		x = clamp((unsigned int)x, 0, width - 1);
+		y = clamp((unsigned int)y, 0, height - 1);
+		return pixels[y * width + x];
 	}
 
 	// Set the pixel at position x,y with value C
-	void SetPixel(unsigned int x, unsigned int y, const Color& c) { if(x < 0 || x > width-1) return; if(y < 0 || y > height-1) return; pixels[ y * width + x ] = c; }
-	inline void SetPixelUnsafe(unsigned int x, unsigned int y, const Color& c) { pixels[ y * width + x ] = c; }
+	void SetPixel(unsigned int x, unsigned int y, const Color& c) { if (x < 0 || x > width - 1) return; if (y < 0 || y > height - 1) return; pixels[y * width + x] = c; }
+	inline void SetPixelUnsafe(unsigned int x, unsigned int y, const Color& c) { pixels[y * width + x] = c; }
 
 	void Resize(unsigned int width, unsigned int height);
 	void Scale(unsigned int width, unsigned int height);
-	
+
 	void FlipY(); // Flip the image top-down
 
 	// Fill the image with the color C
-	void Fill(const Color& c) { for(unsigned int pos = 0; pos < width*height; ++pos) pixels[pos] = c; }
+	void Fill(const Color& c) { for (unsigned int pos = 0; pos < width * height; ++pos) pixels[pos] = c; }
 
 	// Returns a new image with the area from (startx,starty) of size width,height
 	Image GetArea(unsigned int start_x, unsigned int start_y, unsigned int width, unsigned int height);
@@ -78,27 +99,42 @@ public:
 	bool LoadTGA(const char* filename, bool flip_y = false);
 	bool SaveTGA(const char* filename);
 
+	// LAB1: Line raster (DDA)
+	void DrawLineDDA(int x0, int y0, int x1, int y1, const Color& c);
+
+	// LAB1: Rectangle (border + optional fill)
+	void DrawRect(int x, int y, int w, int h, const Color& borderColor, int borderWidth, bool isFilled, const Color& fillColor);
+
+	// LAB1: Scan edge and update AET table (min/max X per Y) 
+	void ScanLineDDA(int x0, int y0, int x1, int y1, std::vector<Cell>& table);
+
+	// LAB1: Triangle using AET + border
+	void DrawTriangle(const Vector2& p0, const Vector2& p1, const Vector2& p2, const Color& borderColor, bool isFilled, const Color& fillColor);
+
+	// LAB1: Blit image into framebuffer 
+	void DrawImage(const Image& image, int x, int y);
+
 	// Used to easy code
-	#ifndef IGNORE_LAMBDAS
+#ifndef IGNORE_LAMBDAS
 
 	// Applies an algorithm to every pixel in an image
 	// you can use lambda sintax:   img.forEachPixel( [](Color c) { return c*2; });
 	// or callback sintax:   img.forEachPixel( mycallback ); //the callback has to be Color mycallback(Color c) { ... }
 	template <typename F>
-	Image& ForEachPixel( F callback )
+	Image& ForEachPixel(F callback)
 	{
-		for(unsigned int pos = 0; pos < width*height; ++pos)
+		for (unsigned int pos = 0; pos < width * height; ++pos)
 			pixels[pos] = callback(pixels[pos]);
 		return *this;
 	}
-	#endif
+#endif
 };
 
 // Image storing one float per pixel instead of a 3 or 4 component Color
-
 class FloatImage
 {
 public:
+
 	unsigned int width;
 	unsigned int height;
 	float* pixels;
